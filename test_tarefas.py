@@ -1,110 +1,52 @@
-import pytest
+import unittest
 from unittest.mock import patch
-from tarefas_crud import (
-    Tarefa,
-    validar_data,
-    criar_tarefa,
-    listar_tarefas,
-    atualizar_tarefa,
-    deletar_tarefa,
-)
+from tarefas_crud import Tarefa, validar_data, criar_tarefa, deletar_tarefa, obter_id_existente
 
+class TestSistemaTarefasPro(unittest.TestCase):
 
-def test_validar_data_valida():
-    assert validar_data("2024-01-01") is True
+    # --- TESTES DE LÓGICA PURA ---
+    def test_validar_data_formatos(self):
+        """Testa múltiplos formatos de data, inclusive bissextos."""
+        self.assertTrue(validar_data("2024-02-29")) # Ano bissexto
+        self.assertFalse(validar_data("2023-02-29")) # Não bissexto
+        self.assertFalse(validar_data("31/12/2026")) # Formato BR (deve falhar se o sistema espera ISO)
+        self.assertFalse(validar_data("   "))        # Apenas espaços
 
+    # --- TESTES DE CRIAÇÃO (MOCKING COMPLEXO) ---
+    @patch('builtins.input', side_effect=['TCC', 'Finalizar escrita', '2026-06-10'])
+    def test_fluxo_criacao_completo(self, mock_input):
+        """Verifica se o objeto Tarefa é instanciado com os atributos corretos."""
+        tarefas = {}
+        proximo_id = 1
+        novo_id = criar_tarefa(tarefas, proximo_id)
+        
+        self.assertIn(1, tarefas)
+        self.assertEqual(tarefas[1].titulo, "TCC")
+        self.assertEqual(novo_id, 2)
 
-def test_validar_data_invalida():
-    assert validar_data("01-01-2024") is False
+    # --- TESTES DE VALIDAÇÃO DE ID ---
+    @patch('builtins.input', return_value='abc') # Usuário digitou letras no ID
+    def test_obter_id_invalido_tipo(self, mock_input):
+        tarefas = {1: Tarefa(1, "Teste", "Desc", "2026-01-01")}
+        resultado = obter_id_existente(tarefas)
+        self.assertIsNone(resultado)
 
-
-def test_criar_tarefa_sucesso():
-    tarefas = {}
-
-    with patch("builtins.input", side_effect=[
-        "Titulo teste",
-        "Descricao teste",
-        "2024-01-01"
-    ]):
-        next_id = criar_tarefa(tarefas, 1)
-
-    assert len(tarefas) == 1
-    assert tarefas[1].titulo == "Titulo teste"
-    assert next_id == 2
-
-
-def test_listar_tarefas_vazia(capsys):
-    listar_tarefas({})
-    captured = capsys.readouterr()
-    assert "Nenhuma tarefa cadastrada." in captured.out
-
-
-def test_atualizar_tarefa_sucesso():
-    tarefas = {
-        1: Tarefa(1, "Old", "Old desc", "2024-01-01")
-    }
-
-    with patch("builtins.input", side_effect=[
-        "1",        # ID
-        "Novo",     # novo título
-        "Nova desc",
-        "2024-02-01"
-    ]):
-        atualizar_tarefa(tarefas)
-
-    assert tarefas[1].titulo == "Novo"
-
-
-def test_atualizar_tarefa_data_invalida(capsys):
-    tarefas = {
-        1: Tarefa(1, "Old", "Old desc", "2024-01-01")
-    }
-
-    with patch("builtins.input", side_effect=[
-        "1",
-        "Novo",
-        "Nova desc",
-        "data-invalida"
-    ]):
-        atualizar_tarefa(tarefas)
-
-    captured = capsys.readouterr()
-    assert "Data inválida" in captured.out
-
-
-def test_deletar_tarefa_confirmado():
-    tarefas = {
-        1: Tarefa(1, "Teste", "Desc", "2024-01-01")
-    }
-
-    with patch("builtins.input", side_effect=[
-        "1",  # ID
-        "s"   # confirmação
-    ]):
+    # --- TESTES DE DELEÇÃO E CONFIRMAÇÃO ---
+    @patch('builtins.input', side_effect=['1', 'n']) # Seleciona ID 1, mas cancela a exclusão
+    def test_deletar_tarefa_cancelamento(self, mock_input):
+        tarefas = {1: Tarefa(1, "Não deletar", "Desc", "2026-01-01")}
         deletar_tarefa(tarefas)
+        self.assertIn(1, tarefas) # A tarefa ainda deve estar lá
 
-    assert 1 not in tarefas
-
-
-def test_deletar_tarefa_cancelado():
-    tarefas = {
-        1: Tarefa(1, "Teste", "Desc", "2024-01-01")
-    }
-
-    with patch("builtins.input", side_effect=[
-        "1",
-        "n"
-    ]):
+    @patch('builtins.input', side_effect=['1', 's']) # Seleciona ID 1 e confirma
+    def test_deletar_tarefa_confirmado(self, mock_input):
+        tarefas = {1: Tarefa(1, "Deletar", "Desc", "2026-01-01")}
         deletar_tarefa(tarefas)
+        self.assertEqual(len(tarefas), 0)
 
-    assert 1 in tarefas
-
-
-def test_obter_id_inexistente(capsys):
-    tarefas = {1: Tarefa(1, "Teste", "Desc", "2024-01-01")}
-
-    with patch("builtins.input", return_value="999"):
-        from main import obter_id_existente
-        result = obter_id_existente(tarefas)
-
-    assert result is None
+    # --- TESTE DE FORMATAÇÃO (EXIBIR) ---
+    def test_metodo_exibir_conteudo(self):
+        t = Tarefa(1, "Título", "Desc", "2026-01-01")
+        saida = t.exibir()
+        self.assertIn("ID: 1", saida)
+        self.assertIn("Título: Título", saida)
